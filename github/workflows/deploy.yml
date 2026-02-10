@@ -1,0 +1,115 @@
+name: "The Creator"
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+jobs:
+  test:
+    name: "Run Tests"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Setup Node
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Run Tests
+        run: npm test
+
+  deploy:
+    name: "Deploy Ephemeral Env"
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: ./terraform
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build and Push Backend
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          push: true
+          tags: mustaphatahiru/capstone-backend:pr-${{ github.event.number }}
+      
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v6.0.0
+        with:
+          aws-region: us-east-1
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+      - name: Test AWS credentials
+        run: aws sts get-caller-identity
+        
+        
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_wrapper: false
+        
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Select/Create Workspace
+        id: workspace
+        run: |
+          WORKSPACE="pr-${{ github.event.number }}"
+          echo "workspace=$WORKSPACE" >> $GITHUB_OUTPUT
+          terraform workspace select $WORKSPACE || terraform workspace new $WORKSPACE
+
+      - name: Terraform Apply
+        id: apply
+        run: |
+          # Use the newly built image tag
+          BACKEND_TAG="mustaphatahiru/capstone-backend:pr-${{ github.event.number }}"
+          FRONTEND_TAG="mustaphatahiru/capstone-frontend:latest"
+          
+          terraform apply -auto-approve \
+            -var="pr_number=${{ github.event.number }}" \
+            -var="backend_image=$BACKEND_TAG" \
+            -var="frontend_image=$FRONTEND_TAG" \
+            -var="POSTGRES_USER=${{ secrets.POSTGRES_USER }}" \
+            -var="POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}" \
+            -var="POSTGRES_DB=${{ secrets.POSTGRES_DB }}"
+          
+          # Capture Output
+          PUBLIC_IP=$(terraform output -raw public_ip)
+          echo "public_ip=$PUBLIC_IP" >> $GITHUB_OUTPUT
+
+      - name: Comment on PR
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const [owner, repo] = "${{ github.repository }}".split("/");
+            const prNumber = ${{ github.event.number }};
+            const ip = "${{ steps.apply.outputs.public_ip }}";
+            const message = `Environment is Deployed!\n\nThe ephemeral environment for the new  PR${prNumber} is ready.\n\nVisit the application at: http://${ip} \n\nThis environment will be valid for 30 minutes.`;
+            
+            github.rest.issues.createComment({
+              owner: owner,
+              repo: repo,
+              issue_number: prNumber,
+              body: message
+            });
