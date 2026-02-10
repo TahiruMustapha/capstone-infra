@@ -41,6 +41,11 @@ variable "pr_number" {
   default     = "0"
 }
 
+variable "backend_key" {
+  type        = string
+  description = "S3 key for Terraform state"
+}
+
 variable "backend_image" {
   description = "Docker image for Backend"
   type        = string
