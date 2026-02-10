@@ -1,5 +1,6 @@
 #!/bin/bash
 
+# Exit on error, undefined variables, or pipe failures
 set -euo pipefail
 
 # Update and Install Docker
@@ -21,11 +22,13 @@ mkdir -p /home/ubuntu/app
 cd /home/ubuntu/app
 
 
+# Write Database Init SQL (Injected by Terraform)
 cat <<'INIT_SQL_EOF' > init.sql
 ${init_sql_content}
 INIT_SQL_EOF
 
 
+# Write Nginx Configuration
 cat <<'NGINX_EOF' > nginx.conf
 server {
     listen 80;
@@ -52,6 +55,7 @@ server {
 }
 NGINX_EOF
 
+# Write Docker Compose File
 cat <<EOF > docker-compose.yml
 services:
   postgres:
@@ -106,6 +110,12 @@ services:
 volumes:
   postgres_data:
 EOF
+
+# Ensure Docker is fully up before proceeding
+sleep 5
+
+# Explicitly pull the latest versions of the images (especially the SHA-tagged ones)
+sudo docker compose pull
 
 # Start Services
 sudo docker compose up -d

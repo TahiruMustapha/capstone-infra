@@ -1,0 +1,132 @@
+name: "Multi Repo Deployer"
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches: [main]
+  repository_dispatch:
+    types: [frontend_updated, backend_updated, manual_deploy]
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+jobs:
+  validate:
+    name: "Infrastructure Test"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./terraform
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+      - name: Terraform Init
+        run: terraform init -backend=false
+      - name: Terraform Format Check
+        run: terraform fmt -check
+      - name: Terraform Validate
+        run: terraform validate
+
+  deploy:
+    name: "Deploy"
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: ./terraform
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Set Environment Variables
+        id: env_vars
+        run: |
+          # --- Defaults (Ephemeral) ---
+          ENV="ephemeral"
+          PR_NUMBER="${{ github.event.number || '0' }}"
+          WORKSPACE="pr-${{ github.event.number || github.run_id }}"
+          BACKEND_TAG="latest"
+          FRONTEND_TAG="latest"
+
+          # --- Production Logic (Push to Main) ---
+          if [ "${{ github.event_name }}" == "push" ]; then
+            ENV="production"
+            WORKSPACE="prod"
+            PR_NUMBER="0"
+          fi
+
+          # --- External Dispatch Logic (From FE/BE) ---
+          if [ "${{ github.event_name }}" == "repository_dispatch" ]; then
+             ENV="${{ github.event.client_payload.env || 'ephemeral' }}"
+             PR_NUMBER="${{ github.event.client_payload.pr_number || '0' }}"
+             WORKSPACE="${ENV == 'production' ? 'prod' : 'pr-' + PR_NUMBER}"
+             # Use the specific tags sent by the app repos
+             BACKEND_TAG="${{ github.event.client_payload.backend_tag || 'latest' }}"
+             FRONTEND_TAG="${{ github.event.client_payload.frontend_tag || 'latest' }}"
+          fi
+
+          echo "env=$ENV" >> $GITHUB_OUTPUT
+          echo "workspace=$WORKSPACE" >> $GITHUB_OUTPUT
+          echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+          echo "backend_tag=$BACKEND_TAG" >> $GITHUB_OUTPUT
+          echo "frontend_tag=$FRONTEND_TAG" >> $GITHUB_OUTPUT
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v3
+        with:
+          aws-region: us-east-1
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_wrapper: false
+        
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Select/Create Workspace
+        run: |
+          WORKSPACE="${{ steps.env_vars.outputs.workspace }}"
+          terraform workspace select $WORKSPACE || terraform workspace new $WORKSPACE
+
+      - name: Terraform Apply
+        id: apply
+        run: |
+          terraform apply -auto-approve \
+            -var="pr_number=${{ steps.env_vars.outputs.pr_number }}" \
+            -var="backend_image=${{ secrets.DOCKER_USERNAME }}/capstone-backend:${{ steps.env_vars.outputs.backend_tag }}" \
+            -var="frontend_image=${{ secrets.DOCKER_USERNAME }}/capstone-frontend:${{ steps.env_vars.outputs.frontend_tag }}" \
+            -var="POSTGRES_USER=${{ secrets.POSTGRES_USER }}" \
+            -var="POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}" \
+            -var="POSTGRES_DB=${{ secrets.POSTGRES_DB }}"
+          
+          echo "public_ip=$(terraform output -raw public_ip)" >> $GITHUB_OUTPUT
+
+      - name: Post PR Comment
+        if: steps.env_vars.outputs.env == 'ephemeral'
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+          script: |
+            const ip = "${{ steps.apply.outputs.public_ip }}";
+            const pr = "${{ steps.env_vars.outputs.pr_number }}";
+            const body = `🚀 **Environment Ready!**\n\nYour changes are live at: http://${ip}`;
+            
+            const [owner, repo] = (context.payload.client_payload && context.payload.client_payload.repository)
+              ? context.payload.client_payload.repository.split("/")
+              : [context.repo.owner, context.repo.repo];
+
+            await github.rest.issues.createComment({
+              owner: owner,
+              repo: repo,
+              issue_number: parseInt(pr),
+              body: body
+            });

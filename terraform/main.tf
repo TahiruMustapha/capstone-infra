@@ -5,17 +5,17 @@ terraform {
       version = "~> 4.16"
     }
   }
-
   required_version = ">= 1.2.0"
 }
 
-# Configure the AWS Provider
 provider "aws" {
   region = var.region
 }
 
+# --- Security Group ---
 resource "aws_security_group" "app_sg" {
-  name_prefix = "capstone-sg-${var.pr_number}-"
+  # Named with 'phoenix' prefix
+  name_prefix = "phoenix-sg-${terraform.workspace}-"
   description = "Allow Web and SSH traffic"
 
   ingress {
@@ -54,12 +54,14 @@ resource "aws_security_group" "app_sg" {
   }
 
   tags = {
-    Name        = "capstone-sg-${var.pr_number}"
-    Environment = "ephemeral"
+    Name        = "phoenix-sg-${terraform.workspace}"
+    Environment = terraform.workspace == "prod" ? "production" : "ephemeral"
     PR          = var.pr_number
     Project     = "devops-training"
   }
 }
+
+# --- EC2 Instance ---
 resource "aws_instance" "capstoneServer" {
   ami           = var.ami_id
   instance_type = var.instance_type
@@ -73,12 +75,13 @@ resource "aws_instance" "capstoneServer" {
     postgres_user      = var.POSTGRES_USER
     postgres_password  = var.POSTGRES_PASSWORD
     postgres_db        = var.POSTGRES_DB
-    init_sql_content   = file("../init.sql")
+    init_sql_content   = file("../init.sql") 
   })
 
   tags = {
-    Name        = "phoenix-pr-${var.pr_number}"
-    Environment = "ephemeral"
+    # Named with 'phoenix' prefix
+    Name        = "phoenix-server-${terraform.workspace}"
+    Environment = terraform.workspace == "prod" ? "production" : "ephemeral"
     PR          = var.pr_number
     Project     = "devops-training"
   }

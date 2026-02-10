@@ -1,0 +1,104 @@
+name: "Multi-Repo Destroyer"
+
+on:
+  pull_request:
+    types: [closed]
+  repository_dispatch:
+    types: [destroy_ephemeral] # Triggered by Signals from FE/BE
+  schedule:
+    - cron: '0 * * * *' # Every hour 
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+jobs:
+  destroy:
+    # Trigger on local PR close OR remote dispatch
+    if: github.event_name == 'pull_request' || (github.event_name == 'repository_dispatch' && github.event.action == 'destroy_ephemeral')
+    name: "Destroy Ephemeral"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./terraform
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Set PR Variable
+        id: vars
+        run: |
+          # Get PR number from local event OR dispatch payload
+          PR_NUMBER="${{ github.event.number || github.event.client_payload.pr_number }}"
+          echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+          echo "workspace=pr-$PR_NUMBER" >> $GITHUB_OUTPUT
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Select Workspace & Destroy
+        run: |
+          WORKSPACE="${{ steps.vars.outputs.workspace }}"
+          PR_NUMBER="${{ steps.vars.outputs.pr_number }}"
+          
+          # Only destroy if workspace exists
+          if terraform workspace select $WORKSPACE; then
+            echo "Directing destruction of workspace $WORKSPACE..."
+            
+            # Pass mandatory variables (tags don't matter during destroy)
+            terraform destroy -auto-approve \
+              -var="pr_number=$PR_NUMBER" \
+              -var="backend_image=cleanup" \
+              -var="frontend_image=cleanup" \
+              -var="POSTGRES_USER=${{ secrets.POSTGRES_USER }}" \
+              -var="POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}" \
+              -var="POSTGRES_DB=${{ secrets.POSTGRES_DB }}"
+            
+            terraform workspace select default
+            terraform workspace delete $WORKSPACE
+            echo "Successfully destroyed $WORKSPACE"
+          else
+            echo "Workspace $WORKSPACE not found. Skipping."
+          fi
+
+  scheduled-cleanup:
+    if: github.event_name == 'schedule'
+    name: "AWS Reaper"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Terminate Old Ephemeral Instances
+        run: |
+          # Look for instances with the NEW tag name 'phoenix-server-pr-*'
+          # Kill anything older than 4 hours (safety cutoff)
+          CUTOFF=$(date -u -d '4 hours ago' +%s)
+          
+          INSTANCES=$(aws ec2 describe-instances \
+            --filters "Name=tag:Name,Values=phoenix-server-pr-*" "Name=instance-state-name,Values=running" \
+            --query 'Reservations[].Instances[].[InstanceId,LaunchTime]' \
+            --output text)
+          
+          while read -r id launch; do
+            [ -z "$id" ] && continue
+            LAUNCH_EPOCH=$(date -u -d "$launch" +%s)
+            if [ "$LAUNCH_EPOCH" -lt "$CUTOFF" ]; then
+              echo "Terminating stale instance $id (Launched: $launch)"
+              aws ec2 terminate-instances --instance-ids "$id"
+            fi
+          done <<< "$INSTANCES"
