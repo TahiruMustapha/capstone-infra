@@ -51,6 +51,10 @@ jobs:
           # --- Defaults (Ephemeral) ---
           ENV="ephemeral"
           PR_NUMBER="${{ github.event.number || '0' }}"
+          terraform init -backend-config="bucket=capstone-terraform-state-b" \
+               -backend-config="key=ephemeral/pr-${PR_NUMBER}/terraform.tfstate" \
+               -backend-config="region=us-east-1" \
+               -backend-config="dynamodb_table=capstone-terraform-locks"
           WORKSPACE="pr-${{ github.event.number || github.run_id }}"
           BACKEND_TAG="latest"
           FRONTEND_TAG="latest"
@@ -58,6 +62,10 @@ jobs:
           # --- Production Logic (Push to Main) ---
           if [ "${{ github.event_name }}" == "push" ]; then
             ENV="production"
+            terraform init -backend-config="bucket=capstone-terraform-state-b" \
+               -backend-config="key=production/terraform.tfstate" \
+               -backend-config="region=us-east-1" \
+               -backend-config="dynamodb_table=capstone-terraform-locks"
             WORKSPACE="prod"
             PR_NUMBER="0"
           fi

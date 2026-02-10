@@ -66,16 +66,16 @@ resource "aws_instance" "capstoneServer" {
   ami           = var.ami_id
   instance_type = var.instance_type
   key_name      = var.key_name
-  
+
   security_groups = [aws_security_group.app_sg.name]
 
   user_data = templatefile("user_data.sh", {
-    backend_image      = var.backend_image
-    frontend_image     = var.frontend_image
-    postgres_user      = var.POSTGRES_USER
-    postgres_password  = var.POSTGRES_PASSWORD
-    postgres_db        = var.POSTGRES_DB
-    init_sql_content   = file("../init.sql") 
+    backend_image     = var.backend_image
+    frontend_image    = var.frontend_image
+    postgres_user     = var.POSTGRES_USER
+    postgres_password = var.POSTGRES_PASSWORD
+    postgres_db       = var.POSTGRES_DB
+    init_sql_content  = file("../init.sql")
   })
 
   tags = {

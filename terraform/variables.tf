@@ -10,28 +10,28 @@ variable "instance_type" {
 
 variable "ami_id" {
   description = "AMI ID for Ubuntu 24.04"
-  default     = "ami-0b6c6ebed2801a5cb" 
+  default     = "ami-0b6c6ebed2801a5cb"
 }
 variable "POSTGRES_USER" {
   description = "Postgres USER"
-  type = string
-  sensitive = true
+  type        = string
+  sensitive   = true
 }
 
 variable "POSTGRES_PASSWORD" {
   description = "Postgres Password"
-  type = string
-  sensitive = true
+  type        = string
+  sensitive   = true
 }
 variable "POSTGRES_DB" {
   description = "Postgres DB "
-  type = string
-  sensitive = true
+  type        = string
+  sensitive   = true
 }
 variable "key_name" {
   description = "Name of the SSH key pair to use for the instance"
   type        = string
-  default = "capstone-key"
+  default     = "capstone-key"
 
 }
 
