@@ -133,12 +133,18 @@ jobs:
           
           echo "public_ip=$(terraform output -raw public_ip)" >> $GITHUB_OUTPUT
 
+      - name: Wait for Instance to be ready
+        run: |
+          echo "Waiting for instance at ${{ steps.apply.outputs.public_ip }} to be ready..."
+          sleep 60
+
       - name: Software Deployment
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ steps.apply.outputs.public_ip }}
           username: ubuntu
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script_stop: true
           script: |
             cd /home/ubuntu/app
             sudo docker compose pull
