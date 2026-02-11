@@ -128,7 +128,8 @@ jobs:
             -var="frontend_image=${{ secrets.DOCKER_USERNAME || 'mustaphatahiru' }}/capstone-frontend:${{ steps.env_vars.outputs.frontend_tag }}" \
             -var="POSTGRES_USER=${{ secrets.POSTGRES_USER }}" \
             -var="POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}" \
-            -var="POSTGRES_DB=${{ secrets.POSTGRES_DB }}"
+            -var="POSTGRES_DB=${{ secrets.POSTGRES_DB }}" \
+            -var="deployment_id=${{ github.run_id }}"
           
           echo "public_ip=$(terraform output -raw public_ip)" >> $GITHUB_OUTPUT
 
@@ -140,7 +141,7 @@ jobs:
           script: |
             const ip = "${{ steps.apply.outputs.public_ip }}";
             const pr = "${{ steps.env_vars.outputs.pr_number }}";
-            const body = `🚀 **Environment Ready!**\n\nYour changes are live at: http://${ip}`;
+            const body = `Environment Ready!**\n\nYour changes are live at: http://${ip}`;
             
             const [owner, repo] = (context.payload.client_payload && context.payload.client_payload.repository)
               ? context.payload.client_payload.repository.split("/")

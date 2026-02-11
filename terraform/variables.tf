@@ -58,3 +58,9 @@ variable "environment" {
   type        = string
   default     = "ephemeral"
 }
+
+variable "deployment_id" {
+  description = "A unique ID to force deployment updates"
+  type        = string
+  default     = "none"
+}

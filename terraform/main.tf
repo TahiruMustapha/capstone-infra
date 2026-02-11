@@ -61,6 +61,23 @@ resource "aws_security_group" "app_sg" {
   }
 }
 
+# --- Elastic IP (Production Only) ---
+resource "aws_eip" "prod_eip" {
+  count    = terraform.workspace == "prod" ? 1 : 0
+  vpc      = true
+
+  tags = {
+    Name        = "phoenix-eip-${terraform.workspace}"
+    Environment = var.environment
+  }
+}
+
+resource "aws_eip_association" "eip_assoc" {
+  count         = terraform.workspace == "prod" ? 1 : 0
+  instance_id   = aws_instance.capstoneServer.id
+  allocation_id = aws_eip.prod_eip[0].id
+}
+
 # --- EC2 Instance ---
 resource "aws_instance" "capstoneServer" {
   ami           = var.ami_id
@@ -80,9 +97,10 @@ resource "aws_instance" "capstoneServer" {
 
   tags = {
     # Named with 'phoenix' prefix
-    Name        = "phoenix-server-${terraform.workspace}"
-    Environment = var.environment
-    PR          = var.pr_number
-    Project     = "devops-training"
+    Name          = "phoenix-server-${terraform.workspace}"
+    Environment   = var.environment
+    PR            = var.pr_number
+    Project       = "devops-training"
+    DeploymentId  = var.deployment_id
   }
 }
