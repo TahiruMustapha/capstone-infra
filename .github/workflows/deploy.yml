@@ -71,7 +71,11 @@ jobs:
           if [ "${{ github.event_name }}" == "repository_dispatch" ]; then
              ENV="${{ github.event.client_payload.env || 'ephemeral' }}"
              PR_NUMBER="${{ github.event.client_payload.pr_number || '0' }}"
-             WORKSPACE="${ENV == 'production' ? 'prod' : 'pr-' + PR_NUMBER}"
+            if [ "$ENV" == "production" ]; then
+              WORKSPACE="prod"
+            else
+              WORKSPACE="pr-$PR_NUMBER"
+            fi
              # Use the specific tags sent by the app repos
              BACKEND_TAG="${{ github.event.client_payload.backend_tag || 'latest' }}"
              FRONTEND_TAG="${{ github.event.client_payload.frontend_tag || 'latest' }}"
