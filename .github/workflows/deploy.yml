@@ -146,6 +146,12 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script_stop: true
           script: |
+            echo "Waiting for cloud-init to finish..."
+            while [ ! -f /home/ubuntu/app/docker-compose.yml ]; do 
+              sleep 5
+              echo "Still waiting for /home/ubuntu/app/docker-compose.yml..."
+            done
+            
             cd /home/ubuntu/app
             sudo docker compose pull
             sudo docker compose up -d
