@@ -1,4 +1,5 @@
 #!/bin/bash
+# Deployment ID: ${deployment_id}
 
 # --- Robust Logging Setup ---
 LOG_FILE="/var/log/user_data.log"

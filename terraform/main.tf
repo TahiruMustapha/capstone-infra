@@ -86,7 +86,10 @@ resource "aws_instance" "capstoneServer" {
 
   security_groups = [aws_security_group.app_sg.name]
 
+  user_data_replace_on_change = true
+
   user_data = templatefile("user_data.sh", {
+    deployment_id     = var.deployment_id
     backend_image     = var.backend_image
     frontend_image    = var.frontend_image
     postgres_user     = var.POSTGRES_USER
