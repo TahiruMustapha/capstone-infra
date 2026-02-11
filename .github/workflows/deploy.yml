@@ -103,8 +103,8 @@ jobs:
         run: |
           terraform apply -auto-approve \
             -var="pr_number=${{ steps.env_vars.outputs.pr_number }}" \
-            -var="backend_image=${{ secrets.DOCKER_USERNAME }}/capstone-backend:${{ steps.env_vars.outputs.backend_tag }}" \
-            -var="frontend_image=${{ secrets.DOCKER_USERNAME }}/capstone-frontend:${{ steps.env_vars.outputs.frontend_tag }}" \
+            -var="backend_image=${{ secrets.DOCKER_USERNAME || 'mustaphatahiru' }}/capstone-backend:${{ steps.env_vars.outputs.backend_tag }}" \
+            -var="frontend_image=${{ secrets.DOCKER_USERNAME || 'mustaphatahiru' }}/capstone-frontend:${{ steps.env_vars.outputs.frontend_tag }}" \
             -var="POSTGRES_USER=${{ secrets.POSTGRES_USER }}" \
             -var="POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}" \
             -var="POSTGRES_DB=${{ secrets.POSTGRES_DB }}"

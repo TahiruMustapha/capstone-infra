@@ -44,7 +44,7 @@ variable "pr_number" {
 variable "backend_image" {
   description = "Docker image for Backend"
   type        = string
-  default     = "mustaphatahiru/capstone-backend:v2"
+  default     = "mustaphatahiru/capstone-backend:latest"
 }
 
 variable "frontend_image" {

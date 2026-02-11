@@ -1,5 +1,11 @@
 #!/bin/bash
 
+# --- Robust Logging Setup ---
+LOG_FILE="/var/log/user_data.log"
+exec > >(tee -a $LOG_FILE /var/log/cloud-init-output.log) 2>&1
+
+echo "--- User Data Script Started: $(date) ---"
+
 # Exit on error, undefined variables, or pipe failures
 set -euo pipefail
 
@@ -18,17 +24,18 @@ sudo apt-get update -y
 sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
 
 # Setup App Directory
+echo "Setting up application directory..."
 mkdir -p /home/ubuntu/app
 cd /home/ubuntu/app
 
-
 # Write Database Init SQL (Injected by Terraform)
+echo "Writing init.sql..."
 cat <<'INIT_SQL_EOF' > init.sql
 ${init_sql_content}
 INIT_SQL_EOF
 
-
 # Write Nginx Configuration
+echo "Writing nginx.conf..."
 cat <<'NGINX_EOF' > nginx.conf
 server {
     listen 80;
@@ -56,6 +63,7 @@ server {
 NGINX_EOF
 
 # Write Docker Compose File
+echo "Writing docker-compose.yml..."
 cat <<EOF > docker-compose.yml
 services:
   postgres:
@@ -112,10 +120,15 @@ volumes:
 EOF
 
 # Ensure Docker is fully up before proceeding
+echo "Waiting for Docker daemon..."
 sleep 5
 
-# Explicitly pull the latest versions of the images (especially the SHA-tagged ones)
+# Explicitly pull the versions of the images
+echo "Pulling images..."
 sudo docker compose pull
 
 # Start Services
+echo "Starting services..."
 sudo docker compose up -d
+
+echo "--- User Data Script Completed: $(date) ---"
