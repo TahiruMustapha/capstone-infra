@@ -55,7 +55,7 @@ resource "aws_security_group" "app_sg" {
 
   tags = {
     Name        = "phoenix-sg-${terraform.workspace}"
-    Environment = terraform.workspace == "prod" ? "production" : "ephemeral"
+    Environment = var.environment
     PR          = var.pr_number
     Project     = "devops-training"
   }
@@ -81,7 +81,7 @@ resource "aws_instance" "capstoneServer" {
   tags = {
     # Named with 'phoenix' prefix
     Name        = "phoenix-server-${terraform.workspace}"
-    Environment = terraform.workspace == "prod" ? "production" : "ephemeral"
+    Environment = var.environment
     PR          = var.pr_number
     Project     = "devops-training"
   }

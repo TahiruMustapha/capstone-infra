@@ -69,13 +69,29 @@ jobs:
 
           # --- External Dispatch Logic (From FE/BE) ---
           if [ "${{ github.event_name }}" == "repository_dispatch" ]; then
-             ENV="${{ github.event.client_payload.env || 'ephemeral' }}"
-             PR_NUMBER="${{ github.event.client_payload.pr_number || '0' }}"
-            if [ "$ENV" == "production" ]; then
-              WORKSPACE="prod"
-            else
-              WORKSPACE="pr-$PR_NUMBER"
-            fi
+             # Extract payload values
+             P_ENV="${{ github.event.client_payload.env }}"
+             P_PR="${{ github.event.client_payload.pr_number }}"
+
+             # Determine Environment
+             if [ "$P_ENV" = "production" ]; then
+               ENV="production"
+             else
+               ENV="ephemeral"
+             fi
+
+             # Determine Workspace and PR Number
+             if [ -n "$P_PR" ] && [ "$P_PR" != "null" ]; then
+               PR_NUMBER="$P_PR"
+               WORKSPACE="pr-$PR_NUMBER"
+             elif [ "$ENV" = "production" ]; then
+               PR_NUMBER="0"
+               WORKSPACE="prod"
+             else
+               PR_NUMBER="0"
+               WORKSPACE="pr-${{ github.run_id }}"
+             fi
+
              # Use the specific tags sent by the app repos
              BACKEND_TAG="${{ github.event.client_payload.backend_tag || 'latest' }}"
              FRONTEND_TAG="${{ github.event.client_payload.frontend_tag || 'latest' }}"
@@ -106,6 +122,7 @@ jobs:
         id: apply
         run: |
           terraform apply -auto-approve \
+            -var="environment=${{ steps.env_vars.outputs.env }}" \
             -var="pr_number=${{ steps.env_vars.outputs.pr_number }}" \
             -var="backend_image=${{ secrets.DOCKER_USERNAME || 'mustaphatahiru' }}/capstone-backend:${{ steps.env_vars.outputs.backend_tag }}" \
             -var="frontend_image=${{ secrets.DOCKER_USERNAME || 'mustaphatahiru' }}/capstone-frontend:${{ steps.env_vars.outputs.frontend_tag }}" \

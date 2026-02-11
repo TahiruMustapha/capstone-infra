@@ -52,3 +52,9 @@ variable "frontend_image" {
   type        = string
   default     = "mustaphatahiru/capstone-frontend:latest"
 }
+
+variable "environment" {
+  description = "Execution environment (production/ephemeral)"
+  type        = string
+  default     = "ephemeral"
+}
