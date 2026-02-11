@@ -63,8 +63,8 @@ resource "aws_security_group" "app_sg" {
 
 # --- Elastic IP (Production Only) ---
 resource "aws_eip" "prod_eip" {
-  count    = terraform.workspace == "prod" ? 1 : 0
-  vpc      = true
+  count = terraform.workspace == "prod" ? 1 : 0
+  vpc   = true
 
   tags = {
     Name        = "phoenix-eip-${terraform.workspace}"
@@ -97,10 +97,10 @@ resource "aws_instance" "capstoneServer" {
 
   tags = {
     # Named with 'phoenix' prefix
-    Name          = "phoenix-server-${terraform.workspace}"
-    Environment   = var.environment
-    PR            = var.pr_number
-    Project       = "devops-training"
-    DeploymentId  = var.deployment_id
+    Name         = "phoenix-server-${terraform.workspace}"
+    Environment  = var.environment
+    PR           = var.pr_number
+    Project      = "devops-training"
+    DeploymentId = var.deployment_id
   }
 }
