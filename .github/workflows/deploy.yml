@@ -133,6 +133,17 @@ jobs:
           
           echo "public_ip=$(terraform output -raw public_ip)" >> $GITHUB_OUTPUT
 
+      - name: Software Deployment
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ steps.apply.outputs.public_ip }}
+          username: ubuntu
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd /home/ubuntu/app
+            sudo docker compose pull
+            sudo docker compose up -d
+
       - name: Post PR Comment
         if: steps.env_vars.outputs.env == 'ephemeral'
         uses: actions/github-script@v6

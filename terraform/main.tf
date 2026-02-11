@@ -86,7 +86,6 @@ resource "aws_instance" "capstoneServer" {
 
   security_groups = [aws_security_group.app_sg.name]
 
-  user_data_replace_on_change = true
 
   user_data = templatefile("user_data.sh", {
     deployment_id     = var.deployment_id
@@ -97,6 +96,9 @@ resource "aws_instance" "capstoneServer" {
     postgres_db       = var.POSTGRES_DB
     init_sql_content  = file("../init.sql")
   })
+  lifecycle {
+    ignore_changes = [user_data]
+  }
 
   tags = {
     # Named with 'phoenix' prefix
