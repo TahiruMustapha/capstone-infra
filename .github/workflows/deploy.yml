@@ -81,12 +81,12 @@ jobs:
              fi
 
              # Determine Workspace and PR Number
-             if [ -n "$P_PR" ] && [ "$P_PR" != "null" ]; then
-               PR_NUMBER="$P_PR"
-               WORKSPACE="pr-$PR_NUMBER"
-             elif [ "$ENV" = "production" ]; then
+             if [ "$ENV" = "production" ]; then
                PR_NUMBER="0"
                WORKSPACE="prod"
+             elif [ -n "$P_PR" ] && [ "$P_PR" != "null" ] && [ "$P_PR" != "0" ]; then
+               PR_NUMBER="$P_PR"
+               WORKSPACE="pr-$PR_NUMBER"
              else
                PR_NUMBER="0"
                WORKSPACE="pr-${{ github.run_id }}"
