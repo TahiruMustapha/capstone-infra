@@ -156,10 +156,10 @@ jobs:
             
             # --- Robust Cleanup ---
             echo "Cleaning up existing containers to prevent naming conflicts..."
-            sudo docker compose down --remove-orphans || true
+            sudo docker compose --log-level ERROR down --remove-orphans || true
             
-            sudo docker compose pull
-            sudo docker compose up -d
+            sudo docker compose --log-level ERROR pull -q
+            sudo docker compose --log-level ERROR up -d
 
       - name: Post PR Comment
         if: steps.env_vars.outputs.env == 'ephemeral'
