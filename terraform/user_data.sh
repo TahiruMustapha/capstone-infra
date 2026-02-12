@@ -27,6 +27,7 @@ sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plu
 # Setup App Directory
 echo "Setting up application directory..."
 mkdir -p /home/ubuntu/app
+sudo chown -R ubuntu:ubuntu /home/ubuntu/app
 cd /home/ubuntu/app
 
 # Write Database Init SQL (Injected by Terraform)
