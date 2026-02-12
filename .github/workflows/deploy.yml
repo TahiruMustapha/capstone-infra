@@ -7,28 +7,6 @@ on:
     branches: [main]
   repository_dispatch:
     types: [frontend_updated, backend_updated, manual_deploy]
-  workflow_dispatch:
-    inputs:
-      env:
-        description: 'Environment to deploy to'
-        required: true
-        default: 'production'
-        type: choice
-        options:
-          - production
-          - ephemeral
-      pr_number:
-        description: 'PR number for ephemeral env (use 0 for production)'
-        required: false
-        default: '0'
-      backend_tag:
-        description: 'Docker tag for Backend'
-        required: true
-        default: 'latest'
-      frontend_tag:
-        description: 'Docker tag for Frontend'
-        required: true
-        default: 'latest'
 
 permissions:
   id-token: write
@@ -119,21 +97,6 @@ jobs:
              FRONTEND_TAG="${{ github.event.client_payload.frontend_tag || 'latest' }}"
           fi
 
-          # --- Manual Dispatch (Rollback/Manual) Logic ---
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            ENV="${{ github.event.inputs.env }}"
-            PR_NUMBER="${{ github.event.inputs.pr_number || '0' }}"
-            BACKEND_TAG="${{ github.event.inputs.backend_tag }}"
-            FRONTEND_TAG="${{ github.event.inputs.frontend_tag }}"
-            
-            if [ "$ENV" == "production" ]; then
-              WORKSPACE="prod"
-              PR_NUMBER="0"
-            else
-              WORKSPACE="pr-$PR_NUMBER"
-            fi
-          fi
-
           echo "env=$ENV" >> $GITHUB_OUTPUT
           echo "workspace=$WORKSPACE" >> $GITHUB_OUTPUT
           echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
@@ -181,40 +144,17 @@ jobs:
           host: ${{ steps.apply.outputs.public_ip }}
           username: ubuntu
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          envs: BACKEND_IMAGE,FRONTEND_IMAGE,PROJECT_NAME
           script_stop: true
           script: |
-            DEPLOY_DIR="/home/ubuntu/$PROJECT_NAME"
-            echo "Deploying to $DEPLOY_DIR using project name $PROJECT_NAME..."
+            echo "Waiting for cloud-init to finish..."
+            while [ ! -d /home/ubuntu/app ] || [ ! -f /home/ubuntu/app/docker-compose.yml ]; do 
+              sleep 5
+              echo "Waiting for /home/ubuntu/app/docker-compose.yml..."
+            done
             
-            # Initial setup if directory doesn't exist
-            if [ ! -d "$DEPLOY_DIR" ]; then
-              sudo mkdir -p "$DEPLOY_DIR"
-              sudo chown -R ubuntu:ubuntu "$DEPLOY_DIR"
-            fi
-            
-            # Copy config from default app dir if needed (fallback for non-cloud-init runs)
-            if [ ! -f "$DEPLOY_DIR/docker-compose.yml" ]; then
-              echo "Waiting for app directory initialization..."
-              while [ ! -d /home/ubuntu/app ] || [ ! -f /home/ubuntu/app/docker-compose.yml ]; do 
-                sleep 5
-                echo "Waiting for /home/ubuntu/app/docker-compose.yml..."
-              done
-              cp /home/ubuntu/app/* "$DEPLOY_DIR/"
-              sudo chown -R ubuntu:ubuntu "$DEPLOY_DIR"
-            fi
-
-            cd "$DEPLOY_DIR"
-            # Dynamically update the image tags in docker-compose.yml
-            sudo sed -i "s|image: .*/capstone-backend:.*|image: $BACKEND_IMAGE|" docker-compose.yml
-            sudo sed -i "s|image: .*/capstone-frontend:.*|image: $FRONTEND_IMAGE|" docker-compose.yml
-            
-            sudo docker compose -p "$PROJECT_NAME" pull
-            sudo docker compose -p "$PROJECT_NAME" up -d
-        env:
-          PROJECT_NAME: "${{ steps.env_vars.outputs.workspace }}"
-          BACKEND_IMAGE: "${{ secrets.DOCKER_USERNAME || 'mustaphatahiru' }}/capstone-backend:${{ steps.env_vars.outputs.backend_tag }}"
-          FRONTEND_IMAGE: "${{ secrets.DOCKER_USERNAME || 'mustaphatahiru' }}/capstone-frontend:${{ steps.env_vars.outputs.frontend_tag }}"
+            cd /home/ubuntu/app
+            sudo docker compose pull
+            sudo docker compose up -d
 
       - name: Post PR Comment
         if: steps.env_vars.outputs.env == 'ephemeral'
