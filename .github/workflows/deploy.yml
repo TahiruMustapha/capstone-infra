@@ -157,8 +157,6 @@ jobs:
             # --- Robust Cleanup ---
             echo "Cleaning up existing containers to prevent naming conflicts..."
             sudo docker compose down --remove-orphans || true
-            # Forcefully remove containers with the specific hardcoded names just in case
-            sudo docker rm -f capstone-postgres-db capstone-backend capstone-frontend nginx-proxy || true
             
             sudo docker compose pull
             sudo docker compose up -d
