@@ -181,23 +181,38 @@ jobs:
           host: ${{ steps.apply.outputs.public_ip }}
           username: ubuntu
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          envs: BACKEND_IMAGE,FRONTEND_IMAGE
+          envs: BACKEND_IMAGE,FRONTEND_IMAGE,PROJECT_NAME
           script_stop: true
           script: |
-            echo "Waiting for cloud-init to finish..."
-            while [ ! -f /home/ubuntu/app/docker-compose.yml ]; do 
-              sleep 5
-              echo "Still waiting for /home/ubuntu/app/docker-compose.yml..."
-            done
+            DEPLOY_DIR="/home/ubuntu/$PROJECT_NAME"
+            echo "Deploying to $DEPLOY_DIR using project name $PROJECT_NAME..."
             
-            cd /home/ubuntu/app
+            # Initial setup if directory doesn't exist
+            if [ ! -d "$DEPLOY_DIR" ]; then
+              sudo mkdir -p "$DEPLOY_DIR"
+              sudo chown -R ubuntu:ubuntu "$DEPLOY_DIR"
+            fi
+            
+            # Copy config from default app dir if needed (fallback for non-cloud-init runs)
+            if [ ! -f "$DEPLOY_DIR/docker-compose.yml" ]; then
+              echo "Waiting for app directory initialization..."
+              while [ ! -d /home/ubuntu/app ] || [ ! -f /home/ubuntu/app/docker-compose.yml ]; do 
+                sleep 5
+                echo "Waiting for /home/ubuntu/app/docker-compose.yml..."
+              done
+              cp /home/ubuntu/app/* "$DEPLOY_DIR/"
+              sudo chown -R ubuntu:ubuntu "$DEPLOY_DIR"
+            fi
+
+            cd "$DEPLOY_DIR"
             # Dynamically update the image tags in docker-compose.yml
             sudo sed -i "s|image: .*/capstone-backend:.*|image: $BACKEND_IMAGE|" docker-compose.yml
             sudo sed -i "s|image: .*/capstone-frontend:.*|image: $FRONTEND_IMAGE|" docker-compose.yml
             
-            sudo docker compose pull
-            sudo docker compose up -d
+            sudo docker compose -p "$PROJECT_NAME" pull
+            sudo docker compose -p "$PROJECT_NAME" up -d
         env:
+          PROJECT_NAME: "${{ steps.env_vars.outputs.workspace }}"
           BACKEND_IMAGE: "${{ secrets.DOCKER_USERNAME || 'mustaphatahiru' }}/capstone-backend:${{ steps.env_vars.outputs.backend_tag }}"
           FRONTEND_IMAGE: "${{ secrets.DOCKER_USERNAME || 'mustaphatahiru' }}/capstone-frontend:${{ steps.env_vars.outputs.frontend_tag }}"
 

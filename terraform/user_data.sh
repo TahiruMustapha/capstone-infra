@@ -70,7 +70,6 @@ cat <<EOF > docker-compose.yml
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: capstone-postgres-db
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${postgres_user}
@@ -82,7 +81,6 @@ services:
 
   backend:
     image: ${backend_image}
-    container_name: capstone-backend
     restart: unless-stopped
     depends_on:
       - postgres
@@ -98,7 +96,6 @@ services:
 
   frontend:
     image: ${frontend_image}
-    container_name: capstone-frontend
     restart: unless-stopped
     depends_on:
       - backend
@@ -107,7 +104,6 @@ services:
 
   proxy:
     image: nginx:alpine
-    container_name: nginx-proxy
     restart: always
     ports:
       - "80:80"
