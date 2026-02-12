@@ -192,8 +192,8 @@ jobs:
             
             cd /home/ubuntu/app
             # Dynamically update the image tags in docker-compose.yml
-            sed -i "s|image: .*/capstone-backend:.*|image: $BACKEND_IMAGE|" docker-compose.yml
-            sed -i "s|image: .*/capstone-frontend:.*|image: $FRONTEND_IMAGE|" docker-compose.yml
+            sudo sed -i "s|image: .*/capstone-backend:.*|image: $BACKEND_IMAGE|" docker-compose.yml
+            sudo sed -i "s|image: .*/capstone-frontend:.*|image: $FRONTEND_IMAGE|" docker-compose.yml
             
             sudo docker compose pull
             sudo docker compose up -d
