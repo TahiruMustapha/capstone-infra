@@ -40,7 +40,7 @@ echo "Writing nginx.conf..."
 cat <<'NGINX_EOF' > nginx.conf
 server {
     listen 80;
-
+    
     location / {
         proxy_pass http://frontend:80;
         proxy_set_header Host $host;
