@@ -147,6 +147,11 @@ jobs:
           script_stop: true
           script: |
             echo "Waiting for cloud-init to finish..."
+            while [ ! -f /var/lib/cloud/instance/boot-finished ]; do
+              sleep 5
+              echo "Waiting for /var/lib/cloud/instance/boot-finished..."
+            done
+
             while [ ! -d /home/ubuntu/app ] || [ ! -f /home/ubuntu/app/docker-compose.yml ]; do 
               sleep 5
               echo "Waiting for /home/ubuntu/app/docker-compose.yml..."
@@ -157,6 +162,8 @@ jobs:
             # --- Robust Cleanup ---
             echo "Cleaning up existing containers to prevent naming conflicts..."
             sudo docker compose down --remove-orphans || true
+            # Legacy cleanup for previously hard-coded container names.
+            sudo docker rm -f capstone-postgres-db capstone-backend capstone-frontend nginx-proxy 2>/dev/null || true
             
             sudo docker compose pull -q
             sudo docker compose up -d --quiet-pull
