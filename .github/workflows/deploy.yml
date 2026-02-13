@@ -261,8 +261,7 @@ jobs:
             echo "BACKEND_IMAGE=$BACKEND_IMAGE" >> .env
             echo "FRONTEND_IMAGE=$FRONTEND_IMAGE" >> .env
             
-            sudo docker compose down --remove-orphans || true
-            sudo docker rm -f capstone-postgres-db capstone-backend capstone-frontend nginx-proxy 2>/dev/null || true
+            sudo docker compose down --volumes || true
             sudo docker compose pull -q
             sudo docker compose up -d --quiet-pull
 
