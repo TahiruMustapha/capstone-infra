@@ -42,13 +42,13 @@ server {
     listen 80;
     
     location / {
-        proxy_pass http://frontend:80;
+        proxy_pass http://capstone-frontend:80;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
     }
 
     location /api {
-        proxy_pass http://backend:3000;
+        proxy_pass http://capstone-backend:3000;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
@@ -57,7 +57,7 @@ server {
     }
 
     location /health {
-        proxy_pass http://backend:3000/health;
+        proxy_pass http://capstone-backend:3000/health;
         proxy_set_header Host $host;
     }
 }
@@ -67,7 +67,7 @@ NGINX_EOF
 echo "Writing docker-compose.yml..."
 cat <<EOF > docker-compose.yml
 services:
-  postgres:
+  capstone-postgres-db:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
@@ -78,26 +78,26 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
 
-  backend:
+  capstone-backend:
     image: ${backend_image}
     restart: unless-stopped
     depends_on:
-      - postgres
+      - capstone-postgres-db
     environment:
       PORT: 3000
       PG_USER: ${postgres_user}
       PG_PASSWORD: ${postgres_password}
       PG_DATABASE: ${postgres_db}
-      PG_HOST: postgres
+      PG_HOST: capstone-postgres-db
       PG_PORT: 5432
     ports:
       - "3000:3000" 
 
-  frontend:
+  capstone-frontend:
     image: ${frontend_image}
     restart: unless-stopped
     depends_on:
-      - backend
+      - capstone-backend
     ports:
       - "8080:80" 
 
@@ -109,8 +109,8 @@ services:
     volumes:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf
     depends_on:
-      - backend
-      - frontend
+      - capstone-backend
+      - capstone-frontend
 
 volumes:
   postgres_data:
