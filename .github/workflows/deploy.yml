@@ -141,39 +141,34 @@ jobs:
       - name: Software Deployment
         uses: appleboy/ssh-action@v1.0.3
         env:
-          BACKEND_IMAGE: ${{ secrets.DOCKER_USERNAME || 'mustaphatahiru' }}/capstone-backend:${{ steps.env_vars.outputs.backend_tag }}
-          FRONTEND_IMAGE: ${{ secrets.DOCKER_USERNAME || 'mustaphatahiru' }}/capstone-frontend:${{ steps.env_vars.outputs.frontend_tag }}
-          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
-          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-          POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
+          BG_IMG: ${{ secrets.DOCKER_USERNAME || 'mustaphatahiru' }}/capstone-backend:${{ steps.env_vars.outputs.backend_tag }}
+          FE_IMG: ${{ secrets.DOCKER_USERNAME || 'mustaphatahiru' }}/capstone-frontend:${{ steps.env_vars.outputs.frontend_tag }}
+          PG_USER: ${{ secrets.POSTGRES_USER }}
+          PG_PASS: ${{ secrets.POSTGRES_PASSWORD }}
+          PG_DB: ${{ secrets.POSTGRES_DB }}
         with:
           host: ${{ steps.apply.outputs.public_ip }}
           username: ubuntu
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script_stop: true
-          envs: BACKEND_IMAGE,FRONTEND_IMAGE,POSTGRES_USER,POSTGRES_PASSWORD,POSTGRES_DB
+          envs: BG_IMG,FE_IMG,PG_USER,PG_PASS,PG_DB
           script: |
-            echo "Waiting for cloud-init to finish..."
-            while [ ! -f /var/lib/cloud/instance/boot-finished ]; do
-              sleep 5
-              echo "Waiting for /var/lib/cloud/instance/boot-finished..."
-            done
+            set -e
+            echo "Updating application configuration..."
+            APP_DIR="/home/ubuntu/app"
+            mkdir -p "$APP_DIR"
+            sudo chown -R ubuntu:ubuntu "$APP_DIR"
+            cd "$APP_DIR"
 
-            mkdir -p /home/ubuntu/app
-            sudo chown -R ubuntu:ubuntu /home/ubuntu/app
-            cd /home/ubuntu/app
-
-            echo "Updating nginx.conf..."
-            cat <<'NGINX_EOF' | sed 's/^            //' > nginx.conf
+            # Create nginx.conf
+            cat > nginx.conf <<'NGINX_EOF'
             server {
                 listen 80;
-                
                 location / {
                     proxy_pass http://capstone-frontend:80;
                     proxy_set_header Host $host;
                     proxy_set_header X-Real-IP $remote_addr;
                 }
-
                 location /api {
                     proxy_pass http://capstone-backend:3000;
                     proxy_http_version 1.1;
@@ -182,50 +177,51 @@ jobs:
                     proxy_set_header Host $host;
                     proxy_cache_bypass $http_upgrade;
                 }
-
                 location /health {
                     proxy_pass http://capstone-backend:3000/health;
                     proxy_set_header Host $host;
                 }
             }
             NGINX_EOF
+            # Strip the 12 spaces of indentation from nginx.conf
+            sed -i 's/^            //' nginx.conf
 
-            echo "Updating docker-compose.yml..."
-            cat <<EOF | sed 's/^            //' > docker-compose.yml
+            # Create docker-compose.yml
+            cat > docker-compose.yml <<EOF
             services:
               capstone-postgres-db:
                 image: postgres:16-alpine
                 restart: unless-stopped
                 environment:
-                  POSTGRES_USER: $POSTGRES_USER
-                  POSTGRES_PASSWORD: $POSTGRES_PASSWORD
-                  POSTGRES_DB: $POSTGRES_DB
+                  POSTGRES_USER: $PG_USER
+                  POSTGRES_PASSWORD: $PG_PASS
+                  POSTGRES_DB: $PG_DB
                 volumes:
                   - postgres_data:/var/lib/postgresql/data
                   - ./init.sql:/docker-entrypoint-initdb.d/init.sql
 
               capstone-backend:
-                image: $BACKEND_IMAGE
+                image: $BG_IMG
                 restart: unless-stopped
                 depends_on:
                   - capstone-postgres-db
                 environment:
                   PORT: 3000
-                  PG_USER: $POSTGRES_USER
-                  PG_PASSWORD: $POSTGRES_PASSWORD
-                  PG_DATABASE: $POSTGRES_DB
+                  PG_USER: $PG_USER
+                  PG_PASSWORD: $PG_PASS
+                  PG_DATABASE: $PG_DB
                   PG_HOST: capstone-postgres-db
                   PG_PORT: 5432
                 ports:
-                  - "3000:3000" 
+                  - "3000:3000"
 
               capstone-frontend:
-                image: $FRONTEND_IMAGE
+                image: $FE_IMG
                 restart: unless-stopped
                 depends_on:
                   - capstone-backend
                 ports:
-                  - "8080:80" 
+                  - "8080:80"
 
               proxy:
                 image: nginx:alpine
@@ -241,13 +237,12 @@ jobs:
             volumes:
               postgres_data:
             EOF
-            
-            # --- Robust Cleanup ---
-            echo "Cleaning up existing containers to prevent naming conflicts..."
+            # Strip the 12 spaces of indentation from docker-compose.yml
+            sed -i 's/^            //' docker-compose.yml
+
+            echo "Restarting containers..."
             sudo docker compose down --remove-orphans || true
-            # Legacy cleanup for previously hard-coded container names.
             sudo docker rm -f capstone-postgres-db capstone-backend capstone-frontend nginx-proxy 2>/dev/null || true
-            
             sudo docker compose pull -q
             sudo docker compose up -d --quiet-pull
 
