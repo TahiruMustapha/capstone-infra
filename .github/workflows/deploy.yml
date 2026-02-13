@@ -193,30 +193,30 @@ jobs:
                 image: postgres:16-alpine
                 restart: unless-stopped
                 environment:
-                  POSTGRES_USER: $PG_USER
-                  POSTGRES_PASSWORD: $PG_PASS
-                  POSTGRES_DB: $PG_DB
+                  POSTGRES_USER: "$PG_USER"
+                  POSTGRES_PASSWORD: "$PG_PASS"
+                  POSTGRES_DB: "$PG_DB"
                 volumes:
                   - postgres_data:/var/lib/postgresql/data
                   - ./init.sql:/docker-entrypoint-initdb.d/init.sql
 
               capstone-backend:
-                image: $BG_IMG
+                image: "$BG_IMG"
                 restart: unless-stopped
                 depends_on:
                   - capstone-postgres-db
                 environment:
-                  PORT: 3000
-                  PG_USER: $PG_USER
-                  PG_PASSWORD: $PG_PASS
-                  PG_DATABASE: $PG_DB
-                  PG_HOST: capstone-postgres-db
-                  PG_PORT: 5432
+                  PORT: "3000"
+                  PG_USER: "$PG_USER"
+                  PG_PASSWORD: "$PG_PASS"
+                  PG_DATABASE: "$PG_DB"
+                  PG_HOST: "capstone-postgres-db"
+                  PG_PORT: "5432"
                 ports:
                   - "3000:3000"
 
               capstone-frontend:
-                image: $FE_IMG
+                image: "$FE_IMG"
                 restart: unless-stopped
                 depends_on:
                   - capstone-backend
@@ -239,6 +239,10 @@ jobs:
             EOF
             # Strip the 12 spaces of indentation from docker-compose.yml
             sed -i 's/^            //' docker-compose.yml
+            
+            echo "--- Debug: Generated docker-compose.yml ---"
+            cat -n docker-compose.yml
+            echo "-------------------------------------------"
 
             echo "Restarting containers..."
             sudo docker compose down --remove-orphans || true
