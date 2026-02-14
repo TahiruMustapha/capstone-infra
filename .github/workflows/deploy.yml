@@ -261,9 +261,9 @@ jobs:
             echo "BACKEND_IMAGE=$BACKEND_IMAGE" >> .env
             echo "FRONTEND_IMAGE=$FRONTEND_IMAGE" >> .env
             
-            sudo docker compose down --volumes || true
-            sudo docker compose pull -q
-            sudo docker compose up -d --quiet-pull
+            sudo docker-compose down -v --remove-orphans || true
+            sudo docker-compose pull -q
+            sudo docker-compose up -d 
 
       - name: Post PR Comment
         if: steps.env_vars.outputs.env == 'ephemeral'
