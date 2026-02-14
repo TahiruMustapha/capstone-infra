@@ -154,6 +154,13 @@ jobs:
           script_stop: true
           envs: BACKEND_IMAGE,FRONTEND_IMAGE,POSTGRES_USER,POSTGRES_PASSWORD,POSTGRES_DB
           script: |
+            echo "Waiting for server initialization (cloud-init)..."
+            until [ -f /var/lib/cloud/instance/boot-finished ]; do
+              echo "Still initializing..."
+              sleep 5
+            done
+            echo "Server ready!"
+
             cd /home/ubuntu/app
             
             # Create runtime .env
