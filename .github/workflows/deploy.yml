@@ -152,15 +152,15 @@ jobs:
           username: ubuntu
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script_stop: true
+          command_timeout: 5m
           envs: BACKEND_IMAGE,FRONTEND_IMAGE,POSTGRES_USER,POSTGRES_PASSWORD,POSTGRES_DB
           script: |
-            echo "Waiting for server initialization (cloud-init)..."
-            until [ -f /var/lib/cloud/instance/boot-finished ]; do
-              echo "Still initializing..."
-              sleep 5
-            done
-            echo "Server ready!"
-
+            # Wait for server to be fully ready
+            echo "Waiting for server initialization..."
+            sudo cloud-init status --wait || true
+            
+            # Ensure app directory exists (extra safety)
+            mkdir -p /home/ubuntu/app
             cd /home/ubuntu/app
             
             # Create runtime .env
@@ -172,6 +172,7 @@ jobs:
             POSTGRES_DB=$POSTGRES_DB
             EOF
 
+            echo "Deploying containers..."
             sudo docker compose pull
             sudo docker compose up -d --remove-orphans
 
