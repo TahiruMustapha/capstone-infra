@@ -244,6 +244,13 @@ jobs:
           script: |
             set -e
             echo "--- Ensuring Docker is installed ---"
+
+            # Wait for any automatic system updates to finish
+            while sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do
+            echo "Waiting for other software managers to finish..."
+            sleep 5
+            done
+
             # Update package list and install dependencies
             sudo apt-get update -y
             sudo apt-get install -y ca-certificates curl
