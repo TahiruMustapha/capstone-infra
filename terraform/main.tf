@@ -88,13 +88,7 @@ resource "aws_instance" "capstoneServer" {
 
 
   user_data = templatefile("user_data.sh", {
-    deployment_id     = var.deployment_id
-    backend_image     = var.backend_image
-    frontend_image    = var.frontend_image
-    postgres_user     = var.POSTGRES_USER
-    postgres_password = var.POSTGRES_PASSWORD
-    postgres_db       = var.POSTGRES_DB
-    init_sql_content  = file("../init.sql")
+    deployment_id = var.deployment_id
   })
   lifecycle {
     ignore_changes = [user_data]

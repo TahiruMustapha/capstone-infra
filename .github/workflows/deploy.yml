@@ -53,48 +53,37 @@ jobs:
       - name: Set Environment Variables
         id: env_vars
         run: |
-          # --- Defaults (Ephemeral) ---
+          # --- Defaults ---
           ENV="ephemeral"
           PR_NUMBER="${{ github.event.number || '0' }}"
           WORKSPACE="pr-${{ github.event.number || github.run_id }}"
           BACKEND_TAG="latest"
           FRONTEND_TAG="latest"
 
-          # --- Production Logic (Push to Main) ---
-          if [ "${{ github.event_name }}" == "push" ]; then
+          # --- 1. Git Push to Main (Production) ---
+          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/main" ]]; then
             ENV="production"
             WORKSPACE="prod"
             PR_NUMBER="0"
           fi
 
-          # --- External Dispatch Logic (From FE/BE) ---
-          if [ "${{ github.event_name }}" == "repository_dispatch" ]; then
-             # Extract payload values
-             P_ENV="${{ github.event.client_payload.env }}"
-             P_PR="${{ github.event.client_payload.pr_number }}"
-
-             # Determine Environment
-             if [ "$P_ENV" = "production" ]; then
-               ENV="production"
-             else
-               ENV="ephemeral"
-             fi
-
-             # Determine Workspace and PR Number
-             if [ "$ENV" = "production" ]; then
-               PR_NUMBER="0"
-               WORKSPACE="prod"
-             elif [ -n "$P_PR" ] && [ "$P_PR" != "null" ] && [ "$P_PR" != "0" ]; then
-               PR_NUMBER="$P_PR"
-               WORKSPACE="pr-$PR_NUMBER"
-             else
-               PR_NUMBER="0"
-               WORKSPACE="pr-${{ github.run_id }}"
-             fi
-
-             # Use the specific tags sent by the app repos
-             BACKEND_TAG="${{ github.event.client_payload.backend_tag || 'latest' }}"
-             FRONTEND_TAG="${{ github.event.client_payload.frontend_tag || 'latest' }}"
+          # --- 2. Repository Dispatch (FE/BE Updates) ---
+          if [[ "${{ github.event_name }}" == "repository_dispatch" ]]; then
+            PAYLOAD_ENV="${{ github.event.client_payload.env }}"
+            PAYLOAD_PR="${{ github.event.client_payload.pr_number }}"
+            
+            if [[ "$PAYLOAD_ENV" == "production" ]]; then
+              ENV="production"
+              WORKSPACE="prod"
+              PR_NUMBER="0"
+            elif [[ -n "$PAYLOAD_PR" && "$PAYLOAD_PR" != "null" && "$PAYLOAD_PR" != "0" ]]; then
+              ENV="ephemeral"
+              PR_NUMBER="$PAYLOAD_PR"
+              WORKSPACE="pr-$PR_NUMBER"
+            fi
+            
+            BACKEND_TAG="${{ github.event.client_payload.backend_tag || 'latest' }}"
+            FRONTEND_TAG="${{ github.event.client_payload.frontend_tag || 'latest' }}"
           fi
 
           echo "env=$ENV" >> $GITHUB_OUTPUT
@@ -133,103 +122,26 @@ jobs:
           
           echo "public_ip=$(terraform output -raw public_ip)" >> $GITHUB_OUTPUT
 
-      - name: Wait for Instance to be ready
+      - name: Wait for SSH Availability
         run: |
-          echo "Waiting for instance at ${{ steps.apply.outputs.public_ip }} to be ready..."
-          sleep 60
+          IP="${{ steps.apply.outputs.public_ip }}"
+          echo "Waiting for SSH on $IP..."
+          for i in {1..30}; do
+            nc -zv -w5 $IP 22 && break || sleep 5
+          done
 
-      - name: Prepare Configuration Files
-        id: config
-        run: |
-          # --- Nginx Configuration ---
-          cat <<'EOF' > nginx.conf
-          server {
-              listen 80;
-              location / {
-                  proxy_pass http://capstone-frontend:80;
-                  proxy_set_header Host $host;
-                  proxy_set_header X-Real-IP $remote_addr;
-              }
-              location /api {
-                  proxy_pass http://capstone-backend:3000;
-                  proxy_http_version 1.1;
-                  proxy_set_header Upgrade $http_upgrade;
-                  proxy_set_header Connection 'upgrade';
-                  proxy_set_header Host $host;
-                  proxy_cache_bypass $http_upgrade;
-              }
-              location /health {
-                  proxy_pass http://capstone-backend:3000/health;
-                  proxy_set_header Host $host;
-              }
-          }
-          EOF
-          
-          # --- Docker Compose Configuration ---
-          # We use environment variables for values that need to be injected at runtime
-          cat <<EOF > docker-compose.yml
-          services:
-            capstone-postgres-db:
-              image: postgres:16-alpine
-              restart: unless-stopped
-              environment:
-                POSTGRES_USER: \${POSTGRES_USER}
-                POSTGRES_PASSWORD: \${POSTGRES_PASSWORD}
-                POSTGRES_DB: \${POSTGRES_DB}
-              volumes:
-                - postgres_data:/var/lib/postgresql/data
-                - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+      - name: Transfer Configuration Files
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ steps.apply.outputs.public_ip }}
+          username: ubuntu
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: "docker-compose.yml,nginx.conf,init.sql"
+          target: "/home/ubuntu/app/"
 
-            capstone-backend:
-              image: \${BACKEND_IMAGE}
-              restart: unless-stopped
-              depends_on:
-                - capstone-postgres-db
-              environment:
-                PORT: "3000"
-                PG_USER: \${POSTGRES_USER}
-                PG_PASSWORD: \${POSTGRES_PASSWORD}
-                PG_DATABASE: \${POSTGRES_DB}
-                PG_HOST: "capstone-postgres-db"
-                PG_PORT: "5432"
-              ports:
-                - "3000:3000"
-
-            capstone-frontend:
-              image: \${FRONTEND_IMAGE}
-              restart: unless-stopped
-              depends_on:
-                - capstone-backend
-              ports:
-                - "8080:80"
-
-            proxy:
-              image: nginx:alpine
-              restart: always
-              ports:
-                - "80:80"
-              volumes:
-                - ./nginx.conf:/etc/nginx/conf.d/default.conf
-              depends_on:
-                - capstone-backend
-                - capstone-frontend
-
-          volumes:
-            postgres_data:
-          EOF
-          
-          # Base64 Encode Files (removing newlines to make them single-line strings)
-          NGINX_CONF_B64=$(base64 -w 0 nginx.conf)
-          DOCKER_COMPOSE_B64=$(base64 -w 0 docker-compose.yml)
-          
-          echo "nginx_conf_b64=$NGINX_CONF_B64" >> $GITHUB_OUTPUT
-          echo "docker_compose_b64=$DOCKER_COMPOSE_B64" >> $GITHUB_OUTPUT
-
-      - name: Software Deployment
+      - name: Docker Deployment
         uses: appleboy/ssh-action@v1.0.3
         env:
-          NGINX_CONF_B64: ${{ steps.config.outputs.nginx_conf_b64 }}
-          DOCKER_COMPOSE_B64: ${{ steps.config.outputs.docker_compose_b64 }}
           BACKEND_IMAGE: ${{ secrets.DOCKER_USERNAME || 'mustaphatahiru' }}/capstone-backend:${{ steps.env_vars.outputs.backend_tag }}
           FRONTEND_IMAGE: ${{ secrets.DOCKER_USERNAME || 'mustaphatahiru' }}/capstone-frontend:${{ steps.env_vars.outputs.frontend_tag }}
           POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
@@ -240,59 +152,21 @@ jobs:
           username: ubuntu
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script_stop: true
-          envs: NGINX_CONF_B64,DOCKER_COMPOSE_B64,BACKEND_IMAGE,FRONTEND_IMAGE,POSTGRES_USER,POSTGRES_PASSWORD,POSTGRES_DB
+          envs: BACKEND_IMAGE,FRONTEND_IMAGE,POSTGRES_USER,POSTGRES_PASSWORD,POSTGRES_DB
           script: |
-            set -e
-            echo "--- Ensuring Docker is installed ---"
-
-            # Wait for any automatic system updates to finish
-            while sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do
-            echo "Waiting for other software managers to finish..."
-            sleep 5
-            done
-
-            # Update package list and install dependencies
-            sudo apt-get update -y
-            sudo apt-get install -y ca-certificates curl
-  
-            # Add Docker's official GPG key
-            sudo install -m 0755 -d /etc/apt/keyrings
-            sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
-            sudo chmod a+r /etc/apt/keyrings/docker.asc
-
-            # Add the Docker repository to Apt sources
-            echo \
-            "deb [arch=$(dpkg --print-architecture ) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
-            $(. /etc/os-release && echo "$VERSION_CODENAME" ) stable" | \
-            sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-            sudo apt-get update -y
-
-            # Install Docker CE, CLI, Containerd, and the Compose plugin
-            sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-
-            echo "--- Docker setup complete ---"
-
-            echo "Updating application configuration..."
-            APP_DIR="/home/ubuntu/app"
-            mkdir -p "$APP_DIR"
-            sudo chown -R ubuntu:ubuntu "$APP_DIR"
-            cd "$APP_DIR"
-
-            # Decode Configuration Files
-            echo "$NGINX_CONF_B64" | base64 -d > nginx.conf
-            echo "$DOCKER_COMPOSE_B64" | base64 -d > docker-compose.yml
-
-            echo "Restarting containers..."
-            # Create .env file for docker-compose to read variables from
-            echo "POSTGRES_USER=$POSTGRES_USER" > .env
-            echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD" >> .env
-            echo "POSTGRES_DB=$POSTGRES_DB" >> .env
-            echo "BACKEND_IMAGE=$BACKEND_IMAGE" >> .env
-            echo "FRONTEND_IMAGE=$FRONTEND_IMAGE" >> .env
+            cd /home/ubuntu/app
             
-            sudo docker compose down --volumes --remove-orphans || true
-            sudo docker compose pull -q
-            sudo docker compose up -d --quiet-pull
+            # Create runtime .env
+            cat <<EOF > .env
+            BACKEND_IMAGE=$BACKEND_IMAGE
+            FRONTEND_IMAGE=$FRONTEND_IMAGE
+            POSTGRES_USER=$POSTGRES_USER
+            POSTGRES_PASSWORD=$POSTGRES_PASSWORD
+            POSTGRES_DB=$POSTGRES_DB
+            EOF
+
+            sudo docker compose pull
+            sudo docker compose up -d --remove-orphans
 
       - name: Post PR Comment
         if: steps.env_vars.outputs.env == 'ephemeral'
