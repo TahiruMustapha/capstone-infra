@@ -243,6 +243,28 @@ jobs:
           envs: NGINX_CONF_B64,DOCKER_COMPOSE_B64,BACKEND_IMAGE,FRONTEND_IMAGE,POSTGRES_USER,POSTGRES_PASSWORD,POSTGRES_DB
           script: |
             set -e
+            echo "--- Ensuring Docker is installed ---"
+            # Update package list and install dependencies
+            sudo apt-get update -y
+            sudo apt-get install -y ca-certificates curl
+  
+            # Add Docker's official GPG key
+            sudo install -m 0755 -d /etc/apt/keyrings
+            sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+            sudo chmod a+r /etc/apt/keyrings/docker.asc
+
+            # Add the Docker repository to Apt sources
+            echo \
+            "deb [arch=$(dpkg --print-architecture ) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+            $(. /etc/os-release && echo "$VERSION_CODENAME" ) stable" | \
+            sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+            sudo apt-get update -y
+
+            # Install Docker CE, CLI, Containerd, and the Compose plugin
+            sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+            echo "--- Docker setup complete ---"
+
             echo "Updating application configuration..."
             APP_DIR="/home/ubuntu/app"
             mkdir -p "$APP_DIR"
@@ -261,9 +283,9 @@ jobs:
             echo "BACKEND_IMAGE=$BACKEND_IMAGE" >> .env
             echo "FRONTEND_IMAGE=$FRONTEND_IMAGE" >> .env
             
-            sudo docker-compose down -v --remove-orphans || true
-            sudo docker-compose pull -q
-            sudo docker-compose up -d 
+            sudo docker compose down --volumes --remove-orphans || true
+            sudo docker compose pull -q
+            sudo docker compose up -d --quiet-pull
 
       - name: Post PR Comment
         if: steps.env_vars.outputs.env == 'ephemeral'
