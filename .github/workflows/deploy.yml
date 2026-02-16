@@ -1,12 +1,13 @@
 name: "Multi Repo Deployer"
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
-  push:
-    branches: [main]
+
   repository_dispatch:
-    types: [frontend_updated, backend_updated, manual_deploy]
+    types: [frontend_updated, backend_updated, frontend_rollback, backend_rollback]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   id-token: write
@@ -34,6 +35,9 @@ jobs:
 
   deploy:
     name: "Deploy"
+    if: |
+      github.event.action != 'backend_rollback' &&
+      github.event.action != 'frontend_rollback'
     needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -53,21 +57,14 @@ jobs:
       - name: Set Environment Variables
         id: env_vars
         run: |
-          # --- Defaults ---
+          #Defaults
           ENV="ephemeral"
           PR_NUMBER="${{ github.event.number || '0' }}"
           WORKSPACE="pr-${{ github.event.number || github.run_id }}"
           BACKEND_TAG="latest"
           FRONTEND_TAG="latest"
 
-          # --- 1. Git Push to Main (Production) ---
-          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/main" ]]; then
-            ENV="production"
-            WORKSPACE="prod"
-            PR_NUMBER="0"
-          fi
-
-          # --- 2. Repository Dispatch (FE/BE Updates) ---
+          #Repository Dispatch from frontend or backend Updates
           if [[ "${{ github.event_name }}" == "repository_dispatch" ]]; then
             PAYLOAD_ENV="${{ github.event.client_payload.env }}"
             PAYLOAD_PR="${{ github.event.client_payload.pr_number }}"
@@ -122,10 +119,10 @@ jobs:
           
           echo "public_ip=$(terraform output -raw public_ip)" >> $GITHUB_OUTPUT
 
-      - name: Wait for SSH Availability
+      - name: Wait for SSH to be Available
         run: |
           IP="${{ steps.apply.outputs.public_ip }}"
-          echo "Waiting for SSH on $IP..."
+          echo "Waiting for SSH on $IP"
           for i in {1..30}; do
             nc -zv -w5 $IP 22 && break || sleep 5
           done
@@ -155,15 +152,13 @@ jobs:
           command_timeout: 5m
           envs: BACKEND_IMAGE,FRONTEND_IMAGE,POSTGRES_USER,POSTGRES_PASSWORD,POSTGRES_DB
           script: |
-            # Wait for server to be fully ready
-            echo "Waiting for server initialization..."
+            
+            echo "Waiting for server initialization"
             sudo cloud-init status --wait || true
             
-            # Ensure app directory exists (extra safety)
             mkdir -p /home/ubuntu/app
             cd /home/ubuntu/app
             
-            # Create runtime .env
             cat <<EOF > .env
             BACKEND_IMAGE=$BACKEND_IMAGE
             FRONTEND_IMAGE=$FRONTEND_IMAGE
@@ -172,7 +167,7 @@ jobs:
             POSTGRES_DB=$POSTGRES_DB
             EOF
 
-            echo "Deploying containers..."
+            echo "Deploying containers"
             sudo docker compose pull
             sudo docker compose up -d --remove-orphans
 
@@ -184,7 +179,7 @@ jobs:
           script: |
             const ip = "${{ steps.apply.outputs.public_ip }}";
             const pr = "${{ steps.env_vars.outputs.pr_number }}";
-            const body = `Environment Ready!**\n\nYour changes are live at: http://${ip}`;
+            const body = `Ephemeral environment is ready.Test your changes and merge to prod.\n\nYour changes are live at: http://${ip}`;
             
             const [owner, repo] = (context.payload.client_payload && context.payload.client_payload.repository)
               ? context.payload.client_payload.repository.split("/")
@@ -196,3 +191,60 @@ jobs:
               issue_number: parseInt(pr),
               body: body
             });
+  rollback:
+    name: Run Rollback
+    if: |
+      github.event.action == 'backend_rollback' ||
+      github.event.action == 'frontend_rollback'
+    needs: validate
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-region: us-east-1
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+
+      - name: Determine Service
+        id: service
+        run: |
+          if [[ "${{ github.event.action }}" == "backend_rollback" ]]; then
+            echo "name=backend" >> $GITHUB_OUTPUT
+            echo "tag_var=backend_tag" >> $GITHUB_OUTPUT
+          else
+            echo "name=frontend" >> $GITHUB_OUTPUT
+            echo "tag_var=frontend_tag" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Execute Rollback
+        run: |
+          VERSION="${{ github.event.client_payload.version }}"
+          SERVICE="${{ steps.service.outputs.name }}"
+          TAG_VAR="${{ steps.service.outputs.tag_var }}"
+
+          echo "Rolling back $SERVICE to $VERSION"
+
+          cd terraform
+          terraform init
+          terraform workspace select prod
+
+          # Apply with rollback version
+          terraform apply -auto-approve \
+            -var="$TAG_VAR=$VERSION"
+
+          echo "Rollback complete for $SERVICE to $VERSION"
+
+      - name: Verify Deployment
+        run: |
+          echo "Waiting for deployment to stabilize..."
+          sleep 60
+
+          echo "Rollback deployment is done!"
+        

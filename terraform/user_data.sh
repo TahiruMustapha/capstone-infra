@@ -1,11 +1,10 @@
 #!/bin/bash
 # Deployment ID: ${deployment_id}
 
-# --- Robust Logging Setup ---
 LOG_FILE="/var/log/user_data.log"
 exec > >(tee -a $LOG_FILE /var/log/cloud-init-output.log) 2>&1
 
-echo "--- User Data Script Started: $(date) ---"
+echo "User Data Script have Started"
 
 # Exit on error, undefined variables, or pipe failures
 set -euo pipefail
@@ -25,10 +24,9 @@ sudo apt-get update -y
 sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
 
 # Setup App Directory
-echo "Setting up application directory..."
+echo "Setting up application directory"
 mkdir -p /home/ubuntu/app
 sudo chown -R ubuntu:ubuntu /home/ubuntu/app
 
-echo "--- One-time setup complete (Docker installed) ---"
-echo "--- Application will be deployed via GitHub Actions ---"
-echo "--- User Data Script Completed: $(date) ---"
+echo "Setup complete Docker is installed"
+echo "User Data Script Completed"

@@ -1,12 +1,11 @@
 name: "Multi-Repo Destroyer"
 
 on:
-  pull_request:
-    types: [closed]
+
   repository_dispatch:
-    types: [destroy_ephemeral] # Triggered by Signals from FE/BE
+    types: [destroy_ephemeral] 
   schedule:
-    - cron: '0 * * * *' # Every hour 
+    - cron: '*/30 * * * *' # Every 30 minutes
 
 permissions:
   id-token: write
@@ -15,8 +14,7 @@ permissions:
 
 jobs:
   destroy:
-    # Trigger on local PR close OR remote dispatch
-    if: github.event_name == 'pull_request' || (github.event_name == 'repository_dispatch' && github.event.action == 'destroy_ephemeral')
+    if: (github.event_name == 'repository_dispatch' && github.event.action == 'destroy_ephemeral')
     name: "Destroy Ephemeral"
     runs-on: ubuntu-latest
     defaults:
@@ -31,7 +29,7 @@ jobs:
         id: vars
         run: |
           # Get PR number from local event OR dispatch payload
-          PR_NUMBER="${{ github.event.number || github.event.client_payload.pr_number }}"
+          PR_NUMBER="${{ github.event.client_payload.pr_number }}"
           echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
           echo "workspace=pr-$PR_NUMBER" >> $GITHUB_OUTPUT
 
@@ -52,11 +50,9 @@ jobs:
           WORKSPACE="${{ steps.vars.outputs.workspace }}"
           PR_NUMBER="${{ steps.vars.outputs.pr_number }}"
           
-          # Only destroy if workspace exists
           if terraform workspace select $WORKSPACE; then
             echo "Directing destruction of workspace $WORKSPACE..."
             
-            # Pass mandatory variables (tags don't matter during destroy)
             terraform destroy -auto-approve \
               -var="pr_number=$PR_NUMBER" \
               -var="backend_image=cleanup" \
@@ -86,8 +82,8 @@ jobs:
       - name: Terminate Old Ephemeral Instances
         run: |
           # Look for instances with the NEW tag name 'phoenix-server-pr-*'
-          # Kill anything older than 4 hours (safety cutoff)
-          CUTOFF=$(date -u -d '4 hours ago' +%s)
+          # Kill anything older than 30 minutes
+          CUTOFF=$(date -u -d '30 minutes ago' +%s)
           
           INSTANCES=$(aws ec2 describe-instances \
             --filters "Name=tag:Name,Values=phoenix-server-pr-*" "Name=instance-state-name,Values=running" \
