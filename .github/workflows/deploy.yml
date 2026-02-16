@@ -59,8 +59,8 @@ jobs:
         run: |
           #Defaults
           ENV="ephemeral"
-          PR_NUMBER="${{ github.event.number || '0' }}"
-          WORKSPACE="pr-${{ github.event.number || github.run_id }}"
+          PR_NUMBER="${{'0'}}"
+          WORKSPACE="pr-${{ '0' }}"
           BACKEND_TAG="latest"
           FRONTEND_TAG="latest"
 
@@ -198,6 +198,7 @@ jobs:
       github.event.action == 'frontend_rollback'
     needs: validate
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
       - name: Checkout
@@ -212,7 +213,7 @@ jobs:
           aws-region: us-east-1
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
 
-      - name: Determine Service
+      - name: Determine Service for Rollback
         id: service
         run: |
           if [[ "${{ github.event.action }}" == "backend_rollback" ]]; then
@@ -223,7 +224,8 @@ jobs:
             echo "image_var=frontend_image" >> $GITHUB_OUTPUT
           fi
 
-      - name: Execute Rollback
+      - name: Execute Terraform Rollback
+        id: terraform_apply
         run: |
           VERSION="${{ github.event.client_payload.version }}"
           SERVICE="${{ steps.service.outputs.name }}"
@@ -245,8 +247,64 @@ jobs:
             -var="POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}" \
             -var="POSTGRES_DB=${{ secrets.POSTGRES_DB }}" \
             -var="deployment_id=${{ github.run_id }}"
+          
+          echo "public_ip=$(terraform output -raw public_ip)" >> $GITHUB_OUTPUT
 
           echo "Rollback complete for $SERVICE to $VERSION"
+
+      - name: Wait for SSH to be Available
+        run: |
+          IP="${{ steps.terraform_apply.outputs.public_ip }}"
+          echo "Waiting for SSH on $IP..."
+          for i in {1..30}; do
+            nc -zv -w5 $IP 22 && break || sleep 5
+          done
+
+      - name: Transfer Configuration Files
+        uses: appleboy/scp-action@v0.1.7
+        with:
+            host: ${{ steps.terraform_apply.outputs.public_ip }}
+            username: ubuntu
+            key: ${{ secrets.SSH_PRIVATE_KEY }}
+            source: "docker-compose.yml,nginx.conf,init.sql"
+            target: "/home/ubuntu/app/"
+
+            
+      - name: Deploy Docker Containers via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ steps.terraform_apply.outputs.public_ip }}
+          username: ubuntu
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            set -e
+            echo "Waiting for server initialization..."
+            sudo cloud-init status --wait || true
+            
+            mkdir -p /home/ubuntu/app
+            cd /home/ubuntu/app
+            
+            # Determine which image tag is the rollback version
+            BACKEND_TAG="latest"
+            FRONTEND_TAG="latest"
+            if [[ "${{ github.event.action }}" == "backend_rollback" ]]; then
+              BACKEND_TAG="${{ github.event.client_payload.version }}"
+            elif [[ "${{ github.event.action }}" == "frontend_rollback" ]]; then
+              FRONTEND_TAG="${{ github.event.client_payload.version }}"
+            fi
+
+            # Create the .env file with the correct image tags
+            cat <<EOF > .env
+            BACKEND_IMAGE=${{ secrets.DOCKER_USERNAME }}/capstone-backend:$BACKEND_TAG
+            FRONTEND_IMAGE=${{ secrets.DOCKER_USERNAME }}/capstone-frontend:$FRONTEND_TAG
+            POSTGRES_USER=${{ secrets.POSTGRES_USER }}
+            POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
+            POSTGRES_DB=${{ secrets.POSTGRES_DB }}
+            EOF
+
+            echo "Deploying containers with rollback version..."
+            sudo docker compose pull
+            sudo docker compose up -d --remove-orphans
 
       - name: Verify Deployment
         run: |
