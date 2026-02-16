@@ -217,17 +217,18 @@ jobs:
         run: |
           if [[ "${{ github.event.action }}" == "backend_rollback" ]]; then
             echo "name=backend" >> $GITHUB_OUTPUT
-            echo "tag_var=backend_tag" >> $GITHUB_OUTPUT
+            echo "image_var=backend_image" >> $GITHUB_OUTPUT
           else
             echo "name=frontend" >> $GITHUB_OUTPUT
-            echo "tag_var=frontend_tag" >> $GITHUB_OUTPUT
+            echo "image_var=frontend_image" >> $GITHUB_OUTPUT
           fi
 
       - name: Execute Rollback
         run: |
           VERSION="${{ github.event.client_payload.version }}"
           SERVICE="${{ steps.service.outputs.name }}"
-          TAG_VAR="${{ steps.service.outputs.tag_var }}"
+          IMAGE_VAR="${{ steps.service.outputs.image_var }}"
+          IMAGE="${{ secrets.DOCKER_USERNAME || 'mustaphatahiru' }}/capstone-${SERVICE}:${VERSION}"
 
           echo "Rolling back $SERVICE to $VERSION"
 
@@ -235,9 +236,15 @@ jobs:
           terraform init
           terraform workspace select prod
 
-          # Apply with rollback version
-          terraform apply -auto-approve \
-            -var="$TAG_VAR=$VERSION"
+          # Apply with rollback image version and required environment vars.
+          terraform apply -input=false -auto-approve \
+            -var="$IMAGE_VAR=$IMAGE" \
+            -var="environment=production" \
+            -var="pr_number=0" \
+            -var="POSTGRES_USER=${{ secrets.POSTGRES_USER }}" \
+            -var="POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}" \
+            -var="POSTGRES_DB=${{ secrets.POSTGRES_DB }}" \
+            -var="deployment_id=${{ github.run_id }}"
 
           echo "Rollback complete for $SERVICE to $VERSION"
 
