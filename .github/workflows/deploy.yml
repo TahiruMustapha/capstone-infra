@@ -247,8 +247,10 @@ jobs:
             -var="POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}" \
             -var="POSTGRES_DB=${{ secrets.POSTGRES_DB }}" \
             -var="deployment_id=${{ github.run_id }}"
+
+             TF_OUTPUT_IP=$(terraform output -raw public_ip)
           
-          echo "public_ip=$(terraform output -raw public_ip)" >> $GITHUB_OUTPUT
+          echo "public_ip=$TF_OUTPUT_IP" >> $GITHUB_OUTPUT
 
           echo "Rollback complete for $SERVICE to $VERSION"
 
