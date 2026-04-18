@@ -4,8 +4,8 @@ on:
 
   repository_dispatch:
     types: [destroy_ephemeral] 
-  schedule:
-    - cron: '*/30 * * * *' # Every 30 minutes
+  # schedule:
+  #   - cron: '*/30 * * * *' # Every 30 minutes
 
 permissions:
   id-token: write
